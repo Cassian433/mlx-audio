@@ -166,6 +166,36 @@ class TestEncodec(unittest.TestCase):
         self.assertEqual(audio_out.shape, audio.shape)
         self.assertTrue(bool(mx.all(mx.isfinite(audio_out))))
 
+    def test_batch_matches_single_clips(self):
+        rng = np.random.default_rng(48)
+        model = Encodec(
+            EncodecConfig(
+                num_filters=2,
+                hidden_size=4,
+                codebook_dim=4,
+                codebook_size=16,
+                num_lstm_layers=1,
+                upsampling_ratios=[2, 2],
+                target_bandwidths=[20.0],
+                sampling_rate=8000,
+            )
+        )
+        model.apply(lambda p: mx.array(rng.normal(0, 0.1, p.shape).astype(np.float32)))
+        audio = mx.array(rng.standard_normal((2, 64, 1)).astype(np.float32))
+        codes, scales = model.encode(audio)
+        audio_out = model.decode(codes, scales)
+        for b in range(2):
+            single_codes, single_scales = model.encode(audio[b : b + 1])
+            np.testing.assert_array_equal(
+                np.array(codes[:, b : b + 1]), np.array(single_codes)
+            )
+            np.testing.assert_allclose(
+                np.array(audio_out[b : b + 1]),
+                np.array(model.decode(single_codes, single_scales)),
+                atol=1e-5,
+                rtol=0,
+            )
+
     def test_encodec_24khz(self):
         model = Encodec(config)
 

@@ -771,9 +771,9 @@ class Encodec(nn.Module):
         """
         chunk_length = self.chunk_length
         if chunk_length is None:
-            if audio_codes.shape[1] != 1:
+            if audio_codes.shape[0] != 1:
                 raise ValueError(f"Expected one frame, got {len(audio_codes)}")
-            audio_values = self._decode_frame(audio_codes[:, 0], audio_scales[0])
+            audio_values = self._decode_frame(audio_codes[0], audio_scales[0])
         else:
             decoded_frames = []
 

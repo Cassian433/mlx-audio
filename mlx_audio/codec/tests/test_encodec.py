@@ -93,19 +93,44 @@ class TestLSTMFallback(unittest.TestCase):
     @unittest.skipUnless(mx.metal.is_available(), "Metal is not available")
     def test_metal_matches_fallback(self):
         rng = np.random.default_rng(44)
-        # The existing Metal kernel's batch offsets are only valid for batch=1.
-        for hidden_size in (7, 33):
-            with self.subTest(hidden_size=hidden_size):
-                x = mx.array(rng.standard_normal((1, 4, 4 * hidden_size)), mx.float32)
-                h_in = mx.array(rng.standard_normal((1, 4 * hidden_size)), mx.float32)
-                cell = mx.array(rng.standard_normal((1, hidden_size)), mx.float32)
-                for t in range(4):
-                    actual = lstm_custom(x, h_in, cell, t)
-                    expected = lstm_fallback(x, h_in, cell, t)
-                    for out, ref in zip(actual, expected):
-                        np.testing.assert_allclose(
-                            np.array(out), np.array(ref), atol=1e-5, rtol=0
-                        )
+        for batch in (1, 2, 3):
+            for hidden_size in (7, 33):
+                with self.subTest(batch=batch, hidden_size=hidden_size):
+                    x = mx.array(
+                        rng.standard_normal((batch, 4, 4 * hidden_size)), mx.float32
+                    )
+                    h_in = mx.array(
+                        rng.standard_normal((batch, 4 * hidden_size)), mx.float32
+                    )
+                    cell = mx.array(
+                        rng.standard_normal((batch, hidden_size)), mx.float32
+                    )
+                    for t in range(4):
+                        actual = lstm_custom(x, h_in, cell, t)
+                        expected = lstm_fallback(x, h_in, cell, t)
+                        for out, ref in zip(actual, expected):
+                            np.testing.assert_allclose(
+                                np.array(out), np.array(ref), atol=1e-5, rtol=0
+                            )
+
+    @unittest.skipUnless(mx.metal.is_available(), "Metal is not available")
+    def test_metal_sequence_matches_numpy(self):
+        rng = np.random.default_rng(46)
+        x = rng.standard_normal((2, 4, 5)).astype(np.float32)
+        layer = LSTM(5, 7)
+        layer.apply(lambda p: mx.array(rng.normal(0, 0.2, p.shape).astype(np.float32)))
+        projected = x @ np.array(layer.Wx).T + np.array(layer.bias)
+        hidden = np.zeros((2, 7), dtype=np.float32)
+        cell = np.zeros_like(hidden)
+        expected = []
+        for t in range(4):
+            hidden, cell = _lstm_step_numpy(
+                projected, hidden @ np.array(layer.Wh).T, cell, t
+            )
+            expected.append(hidden)
+        np.testing.assert_allclose(
+            np.array(layer(mx.array(x))), np.stack(expected, axis=1), atol=1e-5, rtol=0
+        )
 
 
 class TestEncodec(unittest.TestCase):

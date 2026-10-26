@@ -99,11 +99,13 @@ _lstm_kernel = mx.fast.metal_kernel(
     """,
     source="""
         uint b = thread_position_in_grid.x;
+        uint j = thread_position_in_grid.y;
+        if (j >= hidden_size) return;
         uint d = hidden_size * 4;
 
-        uint elem = b * d + thread_position_in_grid.y;
-        uint index = elem;
-        uint x_index = b * num_time_steps * d + time_step * d + index;
+        uint elem = b * hidden_size + j;
+        uint index = b * d + j;
+        uint x_index = b * num_time_steps * d + time_step * d + j;
 
         auto i = sigmoid(h_in[index] + x[x_index]);
         index += hidden_size;
@@ -129,8 +131,8 @@ def lstm_custom(x, h_in, cell, time_step):
         inputs=[x, h_in, cell, out_shape[-1], time_step, x.shape[-2]],
         output_shapes=[out_shape, out_shape],
         output_dtypes=[h_in.dtype, h_in.dtype],
-        grid=(x.shape[0], h_in.size // 4, 1),
-        threadgroup=(256, 1, 1),
+        grid=(x.shape[0], out_shape[-1], 1),
+        threadgroup=(1, min(out_shape[-1], 256), 1),
     )
 
 
@@ -769,9 +771,9 @@ class Encodec(nn.Module):
         """
         chunk_length = self.chunk_length
         if chunk_length is None:
-            if audio_codes.shape[1] != 1:
+            if audio_codes.shape[0] != 1:
                 raise ValueError(f"Expected one frame, got {len(audio_codes)}")
-            audio_values = self._decode_frame(audio_codes[:, 0], audio_scales[0])
+            audio_values = self._decode_frame(audio_codes[0], audio_scales[0])
         else:
             decoded_frames = []
 
